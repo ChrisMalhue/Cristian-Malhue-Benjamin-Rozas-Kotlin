@@ -1,5 +1,6 @@
 package com.example.cristian_malhue_benjamin_rozas_kotlin
 
+import android.content.Intent
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -117,8 +118,8 @@ fun PantallaBienvenida() {
 
         Button(
             onClick = {
-                // Provisorio por ahora: en el Paso 5 lo conectamos con la pantalla de registro.
-                Toast.makeText(contexto, "El registro viene en el siguiente paso", Toast.LENGTH_SHORT).show()
+                val intent = Intent(contexto, RegistroActivity::class.java)
+                contexto.startActivity(intent)
             },
             modifier = Modifier.fillMaxWidth(),
             interactionSource = interaccion,
@@ -129,8 +130,8 @@ fun PantallaBienvenida() {
 
         OutlinedButton(
             onClick = {
-                // Provisorio en un rato: la pantalla de login se hace más adelante.
-                Toast.makeText(contexto, "El inicio de sesión viene pronto", Toast.LENGTH_SHORT).show()
+                val intent = Intent(contexto, LoginActivity::class.java)
+                contexto.startActivity(intent)
             },
             modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
         ) {

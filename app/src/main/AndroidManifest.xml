@@ -23,6 +23,14 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <activity
+            android:name=".RegistroActivity"
+            android:exported="false"
+            android:label="Registro" />
+        <activity
+            android:name=".LoginActivity"
+            android:exported="false"
+            android:label="Iniciar sesión" />
     </application>
 
 </manifest>
