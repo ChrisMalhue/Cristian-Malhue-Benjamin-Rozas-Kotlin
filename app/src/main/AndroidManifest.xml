@@ -31,6 +31,10 @@
             android:name=".LoginActivity"
             android:exported="false"
             android:label="Iniciar sesión" />
+        <activity
+            android:name=".InicioActivity"
+            android:exported="false"
+            android:label="Inicio" />
     </application>
 
 </manifest>

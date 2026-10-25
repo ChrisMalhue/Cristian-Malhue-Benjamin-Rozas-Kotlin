@@ -5,6 +5,7 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import android.content.Intent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
@@ -148,8 +149,14 @@ fun PantallaLogin(dao: UsuarioDAO, onVolver: () -> Unit) {
                         if (usuario == null || usuario.password != password) {
                             mensajeError = "Correo o contraseña incorrectos"
                         } else {
-                            // Provisorio: en el Paso 7 abrimos la vista de bienvenida del usuario.
-                            Toast.makeText(contexto, "Bienvenido, ${usuario.nombre}", Toast.LENGTH_LONG).show()
+                            // Pasar datos a la activity "InicioActivity"
+                            val intent = Intent(contexto, InicioActivity::class.java)
+                            intent.putExtra("nombre", usuario.nombre)
+                            intent.putExtra("id", usuario.id)
+                            contexto.startActivity(intent)
+
+                            // Cierra el login para que el botón "atrás" no vuelva aquí.
+                            onVolver()
                         }
                     }
                 }
