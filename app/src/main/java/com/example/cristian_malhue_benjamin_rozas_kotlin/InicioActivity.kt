@@ -17,7 +17,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AddBox
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material3.BottomAppBar
 import androidx.compose.material3.BottomAppBarDefaults
@@ -48,18 +47,47 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.cristian_malhue_benjamin_rozas_kotlin.ui.theme.CristianMalhueBenjaminRozasKotlinTheme
+import android.app.Activity
+import android.content.Intent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.runtime.saveable.rememberSaveable
+import android.content.Context
+import android.net.Uri
+import android.provider.OpenableColumns
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.room.Room
+import com.example.cristian_malhue_benjamin_rozas_kotlin.data.AppDatabase
+import com.example.cristian_malhue_benjamin_rozas_kotlin.data.DocumentoDAO
+import com.example.cristian_malhue_benjamin_rozas_kotlin.model.Documento
+import kotlinx.coroutines.launch
 
 class InicioActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        setContent {
+        // Crear o abrir la base de datos Room.
+        val db = Room.databaseBuilder(
+            applicationContext,
+            AppDatabase::class.java,
+            "gestor.db"
+        ).build()
 
+        // Obtener el DAO para acceder a la tabla documentos.
+        val documentoDao = db.documentoDao()
+
+        setContent {
             // recibir datos de la activity "LoginActivity"
             val nombre = intent.getStringExtra("nombre") ?: ""
+            val id = intent.getIntExtra("id", 0)
 
             CristianMalhueBenjaminRozasKotlinTheme {
-                PantallaInicio(nombre, onCerrarSesion = { finish() })
+                PantallaInicio(
+                    nombreInicial = nombre,
+                    id = id,
+                    documentoDao = documentoDao,
+                    onCerrarSesion = { finish() } // termina esta Activity y vuelve a la anterior
+                )
             }
         }
     }
@@ -67,8 +95,53 @@ class InicioActivity : ComponentActivity() {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun PantallaInicio(nombre: String, onCerrarSesion: () -> Unit) {
+fun PantallaInicio(nombreInicial: String, id: Int, documentoDao: DocumentoDAO, onCerrarSesion: () -> Unit) {
     val contexto = LocalContext.current
+
+    var nombre by rememberSaveable { mutableStateOf(nombreInicial) }
+
+    // Abre otra Activity y recibe lo que ella devuelva al terminar.
+    val editarPerfil = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { resultado ->
+        if (resultado.resultCode == Activity.RESULT_OK) {
+            nombre = resultado.data?.getStringExtra("nombre") ?: nombre
+        }
+    }
+
+    val scope = rememberCoroutineScope()
+
+    // Selector nativo de archivos (el mismo de EjemploArchivos).
+    val selectorDocumento = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        // Si cancela el selector, uri es null.
+        if (uri != null) {
+            val nombreArchivo = obtenerNombreArchivo(contexto, uri)
+
+            if (obtenerTipoMime(nombreArchivo) == null) {
+                Toast.makeText(contexto, "Solo se permiten archivos Word o PDF", Toast.LENGTH_LONG).show()
+            } else {
+                // Conserva el permiso para leer el archivo aunque se cierre la app.
+                contexto.contentResolver.takePersistableUriPermission(
+                    uri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION
+                )
+
+                // Ejecuta una corrutina para no bloquear la interfaz.
+                scope.launch {
+                    documentoDao.insertar(
+                        Documento(
+                            usuarioId = id,
+                            nombre = nombreArchivo,
+                            uri = uri.toString()
+                        )
+                    )
+                    Toast.makeText(contexto, "Subido correctamente", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
 
     // Controla si el menú desplegable está abierto o cerrado.
     var menuAbierto by remember { mutableStateOf(false) }
@@ -135,17 +208,16 @@ fun PantallaInicio(nombre: String, onCerrarSesion: () -> Unit) {
             BottomAppBar(
                 actions = {
                     IconButton(onClick = {
-                        Toast.makeText(contexto, "Ya estás en Inicio", Toast.LENGTH_SHORT).show()
-                    }) {
-                        Icon(Icons.Filled.Home, contentDescription = "Inicio")
-                    }
-                    IconButton(onClick = {
-                        Toast.makeText(contexto, "Documentos: viene pronto", Toast.LENGTH_SHORT).show()
+                        val intent = Intent(contexto, DocumentosActivity::class.java)
+                        intent.putExtra("id", id)
+                        contexto.startActivity(intent)
                     }) {
                         Icon(Icons.Filled.Description, contentDescription = "Documentos")
                     }
                     IconButton(onClick = {
-                        Toast.makeText(contexto, "Editar datos: viene pronto", Toast.LENGTH_SHORT).show()
+                        val intent = Intent(contexto, EditarPerfilActivity::class.java)
+                        intent.putExtra("id", id)
+                        editarPerfil.launch(intent)
                     }) {
                         Icon(Icons.Filled.Edit, contentDescription = "Editar datos")
                     }
@@ -153,7 +225,7 @@ fun PantallaInicio(nombre: String, onCerrarSesion: () -> Unit) {
                 floatingActionButton = {
                     FloatingActionButton(
                         onClick = {
-                            Toast.makeText(contexto, "Cargar documento: viene pronto", Toast.LENGTH_SHORT).show()
+                            selectorDocumento.launch(arrayOf("*/*"))
                         },
                         containerColor = BottomAppBarDefaults.bottomAppBarFabColor,
                         elevation = FloatingActionButtonDefaults.bottomAppBarFabElevation()
@@ -186,5 +258,31 @@ fun PantallaInicio(nombre: String, onCerrarSesion: () -> Unit) {
                 )
             }
         }
+    }
+}
+
+// Obtiene el nombre del archivo elegido (ejemplo: "informe.pdf").
+fun obtenerNombreArchivo(contexto: Context, uri: Uri): String {
+    var nombre = "documento"
+
+    contexto.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+        val indice = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+        if (indice >= 0 && cursor.moveToFirst()) {
+            nombre = cursor.getString(indice)
+        }
+    }
+
+    return nombre
+}
+
+// Devuelve el tipo del archivo si es PDF o Word. Si es de otro tipo, devuelve null.
+fun obtenerTipoMime(nombre: String): String? {
+    val nombreMinuscula = nombre.lowercase()
+
+    return when {
+        nombreMinuscula.endsWith(".pdf") -> "application/pdf"
+        nombreMinuscula.endsWith(".docx") -> "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        nombreMinuscula.endsWith(".doc") -> "application/msword"
+        else -> null
     }
 }

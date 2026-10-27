@@ -35,6 +35,14 @@
             android:name=".InicioActivity"
             android:exported="false"
             android:label="Inicio" />
+        <activity
+            android:name=".EditarPerfilActivity"
+            android:exported="false"
+            android:label="Editar perfil" />
+        <activity
+            android:name=".DocumentosActivity"
+            android:exported="false"
+            android:label="Documentos" />
     </application>
 
 </manifest>
