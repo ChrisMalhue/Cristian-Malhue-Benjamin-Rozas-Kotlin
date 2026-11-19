@@ -1,9 +1,12 @@
 package com.example.cristian_malhue_benjamin_rozas_kotlin
 
+import android.content.Context
 import android.content.Intent
+import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Bundle
+import android.util.Base64
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -63,44 +66,37 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.room.Room
-import com.example.cristian_malhue_benjamin_rozas_kotlin.data.AppDatabase
-import com.example.cristian_malhue_benjamin_rozas_kotlin.data.UsuarioDAO
+import com.example.cristian_malhue_benjamin_rozas_kotlin.model.Rol
+import com.example.cristian_malhue_benjamin_rozas_kotlin.model.Usuario
+import com.example.cristian_malhue_benjamin_rozas_kotlin.network.RetrofitClient
 import com.example.cristian_malhue_benjamin_rozas_kotlin.ui.theme.CristianMalhueBenjaminRozasKotlinTheme
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.ByteArrayOutputStream
 
 class EditarPerfilActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
-        // Crear o abrir la base de datos Room.
-        val db = Room.databaseBuilder(
-            applicationContext,
-            AppDatabase::class.java,
-            "gestor.db"
-        ).build()
-
-        // Obtener el DAO para acceder a la tabla usuarios.
-        val dao = db.usuarioDao()
-
         setContent {
-
-            // recibir datos de la activity "InicioActivity"
             val id = intent.getIntExtra("id", 0)
 
             CristianMalhueBenjaminRozasKotlinTheme {
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                    Column(modifier = Modifier.padding(innerPadding).padding(24.dp)) {
+                    Column(
+                        modifier = Modifier
+                            .padding(innerPadding)
+                            .padding(24.dp)
+                    ) {
                         PantallaEditarPerfil(
-                            dao = dao,
                             id = id,
                             onGuardado = { nombreNuevo ->
-                                // Devolver el nombre nuevo a la activity "InicioActivity"
                                 val resultado = Intent()
                                 resultado.putExtra("nombre", nombreNuevo)
                                 setResult(RESULT_OK, resultado)
-                                finish() // termina esta Activity y vuelve a la anterior
+                                finish()
                             },
                             onVolver = { finish() }
                         )
@@ -113,7 +109,6 @@ class EditarPerfilActivity : ComponentActivity() {
 
 @Composable
 fun PantallaEditarPerfil(
-    dao: UsuarioDAO,
     id: Int,
     onGuardado: (String) -> Unit,
     onVolver: () -> Unit
@@ -122,41 +117,53 @@ fun PantallaEditarPerfil(
     val scope = rememberCoroutineScope()
 
     var cargado by rememberSaveable { mutableStateOf(false) }
+    var guardando by remember { mutableStateOf(false) }
     var nombre by rememberSaveable { mutableStateOf("") }
     var correo by rememberSaveable { mutableStateOf("") }
     var password by rememberSaveable { mutableStateOf("") }
     var confirmar by rememberSaveable { mutableStateOf("") }
     var foto by rememberSaveable { mutableStateOf<String?>(null) }
+    var rolUsuario by rememberSaveable { mutableStateOf(Rol.PROFESOR) }
     var mostrarPassword by rememberSaveable { mutableStateOf(false) }
     var mensajeError by remember { mutableStateOf("") }
 
-    // Al abrir la pantalla, carga los datos actuales del usuario desde SQLite.
-    LaunchedEffect(Unit) {
+    LaunchedEffect(id) {
         if (!cargado) {
-            val usuario = dao.buscarPorId(id)
-            if (usuario != null) {
-                nombre = usuario.nombre
-                correo = usuario.correo
-                password = usuario.password
-                confirmar = usuario.password
-                foto = usuario.foto
+            try {
+                val respuesta = RetrofitClient.usuariosApi.obtenerPorId(id)
+                if (respuesta.isSuccessful && respuesta.body() != null) {
+                    val usuario = respuesta.body()!!
+                    nombre = usuario.nombre
+                    correo = usuario.correo
+                    password = usuario.password
+                    confirmar = usuario.password
+                    foto = usuario.foto
+                    rolUsuario = usuario.rol
+                } else {
+                    mensajeError = "No se pudieron cargar los datos del perfil"
+                }
+            } catch (e: Exception) {
+                mensajeError = "Error de conexión con el servidor de usuarios"
+            } finally {
+                cargado = true
             }
-            cargado = true
         }
     }
 
-    // Selector nativo de archivos, filtrado solo para imágenes.
     val selectorImagen = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri ->
-        // Si cancela el selector, uri es null.
         if (uri != null) {
-            // Conserva el permiso para leer la imagen aunque se cierre la app.
-            contexto.contentResolver.takePersistableUriPermission(
-                uri,
-                Intent.FLAG_GRANT_READ_URI_PERMISSION
-            )
-            foto = uri.toString()
+            scope.launch {
+                val base64 = withContext(Dispatchers.IO) {
+                    comprimirImagenABase64(contexto, uri)
+                }
+                if (base64 != null) {
+                    foto = base64
+                } else {
+                    Toast.makeText(contexto, "No se pudo procesar la imagen", Toast.LENGTH_SHORT).show()
+                }
+            }
         }
     }
 
@@ -165,7 +172,6 @@ fun PantallaEditarPerfil(
         verticalArrangement = Arrangement.spacedBy(8.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-
         Text(
             text = "Editar perfil",
             fontSize = 28.sp,
@@ -178,7 +184,6 @@ fun PantallaEditarPerfil(
             OutlinedButton(onClick = { selectorImagen.launch(arrayOf("image/*")) }) {
                 Text("Cambiar foto")
             }
-            // Vuelve a la imagen por defecto.
             TextButton(
                 onClick = { foto = null },
                 enabled = foto != null
@@ -229,7 +234,6 @@ fun PantallaEditarPerfil(
             Text("Mostrar contraseña")
         }
 
-        // El mensaje de error aparece y desaparece con animación.
         AnimatedVisibility(
             visible = mensajeError.isNotEmpty(),
             enter = expandVertically(animationSpec = tween(300)) + fadeIn(),
@@ -243,41 +247,47 @@ fun PantallaEditarPerfil(
 
         Button(
             onClick = {
-                // Se reutilizan las mismas validaciones del registro.
                 val error = validarRegistro(nombre, correo, password, confirmar)
 
                 if (error != null) {
                     mensajeError = error
                 } else {
                     mensajeError = ""
+                    guardando = true
 
-                    // Ejecuta una corrutina para no bloquear la interfaz.
                     scope.launch {
-                        val correoLimpio = correo.trim().lowercase()
-                        val existente = dao.buscarPorCorreo(correoLimpio)
-
-                        // El correo puede repetirse solo si es el del mismo usuario.
-                        if (existente != null && existente.id != id) {
-                            mensajeError = "Ya existe una cuenta con ese correo"
-                        } else {
-                            // Actualiza los datos del usuario en SQLite.
-                            dao.actualizar(
+                        try {
+                            val usuarioActualizado = Usuario(
                                 id = id,
                                 nombre = nombre.trim(),
-                                correo = correoLimpio,
+                                correo = correo.trim().lowercase(),
                                 password = password,
+                                rol = rolUsuario,
                                 foto = foto
                             )
-                            Toast.makeText(contexto, "Perfil actualizado", Toast.LENGTH_LONG).show()
-                            onGuardado(nombre.trim())
+
+                            val respuesta = RetrofitClient.usuariosApi.actualizar(id, usuarioActualizado)
+
+                            if (respuesta.isSuccessful) {
+                                Toast.makeText(contexto, "Perfil actualizado", Toast.LENGTH_LONG).show()
+                                onGuardado(nombre.trim())
+                            } else if (respuesta.code() == 409) {
+                                mensajeError = "Ya existe una cuenta con ese correo"
+                            } else {
+                                mensajeError = "Error al guardar (${respuesta.code()})"
+                            }
+                        } catch (e: Exception) {
+                            mensajeError = "No se pudo conectar con el servidor de usuarios"
+                        } finally {
+                            guardando = false
                         }
                     }
                 }
             },
             modifier = Modifier.fillMaxWidth(),
-            enabled = cargado // se habilita cuando ya se cargaron los datos
+            enabled = cargado && !guardando
         ) {
-            Text("Guardar cambios")
+            Text(if (guardando) "Guardando..." else "Guardar cambios")
         }
 
         TextButton(
@@ -289,19 +299,38 @@ fun PantallaEditarPerfil(
     }
 }
 
+fun comprimirImagenABase64(contexto: Context, uri: Uri): String? {
+    return try {
+        val opciones = BitmapFactory.Options().apply { inSampleSize = 4 }
+        val bitmap = contexto.contentResolver.openInputStream(uri)?.use { entrada ->
+            BitmapFactory.decodeStream(entrada, null, opciones)
+        } ?: return null
+
+        val salida = ByteArrayOutputStream()
+        bitmap.compress(Bitmap.CompressFormat.JPEG, 70, salida)
+        Base64.encodeToString(salida.toByteArray(), Base64.NO_WRAP)
+    } catch (e: Exception) {
+        null
+    }
+}
+
 @Composable
 fun FotoPerfil(foto: String?) {
     val contexto = LocalContext.current
 
-    // Convierte la imagen elegida (URI) en un bitmap. Si no hay foto o falla, queda en null.
     val bitmap = remember(foto) {
-        if (foto == null) {
+        if (foto.isNullOrBlank()) {
             null
         } else {
             try {
-                contexto.contentResolver.openInputStream(Uri.parse(foto))?.use { entrada ->
-                    val opciones = BitmapFactory.Options().apply { inSampleSize = 4 } // reduce el tamaño
-                    BitmapFactory.decodeStream(entrada, null, opciones)
+                if (foto.startsWith("content://") || foto.startsWith("file://")) {
+                    contexto.contentResolver.openInputStream(Uri.parse(foto))?.use { entrada ->
+                        val opciones = BitmapFactory.Options().apply { inSampleSize = 4 }
+                        BitmapFactory.decodeStream(entrada, null, opciones)
+                    }
+                } else {
+                    val bytes = Base64.decode(foto, Base64.DEFAULT)
+                    BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
                 }
             } catch (e: Exception) {
                 null
@@ -320,7 +349,6 @@ fun FotoPerfil(foto: String?) {
                 .border(2.dp, Color.LightGray, CircleShape)
         )
     } else {
-        // Foto por defecto: personaje gris sobre fondo blanco.
         Box(
             modifier = Modifier
                 .size(140.dp)

@@ -1,42 +1,58 @@
 package com.example.cristian_malhue_benjamin_rozas_kotlin
 
+import android.app.Activity
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
+import android.provider.OpenableColumns
+import android.util.Base64
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AddBox
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.EventAvailable
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material3.BottomAppBar
 import androidx.compose.material3.BottomAppBarDefaults
+import androidx.compose.material3.Button
 import androidx.compose.material3.CenterAlignedTopAppBar
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.FloatingActionButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -46,47 +62,29 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.cristian_malhue_benjamin_rozas_kotlin.ui.theme.CristianMalhueBenjaminRozasKotlinTheme
-import android.app.Activity
-import android.content.Intent
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.runtime.saveable.rememberSaveable
-import android.content.Context
-import android.net.Uri
-import android.provider.OpenableColumns
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.room.Room
-import com.example.cristian_malhue_benjamin_rozas_kotlin.data.AppDatabase
-import com.example.cristian_malhue_benjamin_rozas_kotlin.data.DocumentoDAO
 import com.example.cristian_malhue_benjamin_rozas_kotlin.model.Documento
+import com.example.cristian_malhue_benjamin_rozas_kotlin.network.RetrofitClient
+import com.example.cristian_malhue_benjamin_rozas_kotlin.ui.theme.CristianMalhueBenjaminRozasKotlinTheme
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class InicioActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        // Crear o abrir la base de datos Room.
-        val db = Room.databaseBuilder(
-            applicationContext,
-            AppDatabase::class.java,
-            "gestor.db"
-        ).build()
-
-        // Obtener el DAO para acceder a la tabla documentos.
-        val documentoDao = db.documentoDao()
 
         setContent {
-            // recibir datos de la activity "LoginActivity"
             val nombre = intent.getStringExtra("nombre") ?: ""
             val id = intent.getIntExtra("id", 0)
+            val rol = intent.getStringExtra("rol") ?: "PROFESOR"
 
             CristianMalhueBenjaminRozasKotlinTheme {
                 PantallaInicio(
                     nombreInicial = nombre,
                     id = id,
-                    documentoDao = documentoDao,
-                    onCerrarSesion = { finish() } // termina esta Activity y vuelve a la anterior
+                    rol = rol,
+                    onCerrarSesion = { finish() }
                 )
             }
         }
@@ -95,12 +93,16 @@ class InicioActivity : ComponentActivity() {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun PantallaInicio(nombreInicial: String, id: Int, documentoDao: DocumentoDAO, onCerrarSesion: () -> Unit) {
+fun PantallaInicio(
+    nombreInicial: String,
+    id: Int,
+    rol: String,
+    onCerrarSesion: () -> Unit
+) {
     val contexto = LocalContext.current
-
     var nombre by rememberSaveable { mutableStateOf(nombreInicial) }
+    val scope = rememberCoroutineScope()
 
-    // Abre otra Activity y recibe lo que ella devuelva al terminar.
     val editarPerfil = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult()
     ) { resultado ->
@@ -109,49 +111,54 @@ fun PantallaInicio(nombreInicial: String, id: Int, documentoDao: DocumentoDAO, o
         }
     }
 
-    val scope = rememberCoroutineScope()
-
-    // Selector nativo de archivos (el mismo de EjemploArchivos).
     val selectorDocumento = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri ->
-        // Si cancela el selector, uri es null.
         if (uri != null) {
             val nombreArchivo = obtenerNombreArchivo(contexto, uri)
 
             if (obtenerTipoMime(nombreArchivo) == null) {
                 Toast.makeText(contexto, "Solo se permiten archivos Word o PDF", Toast.LENGTH_LONG).show()
             } else {
-                // Conserva el permiso para leer el archivo aunque se cierre la app.
-                contexto.contentResolver.takePersistableUriPermission(
-                    uri,
-                    Intent.FLAG_GRANT_READ_URI_PERMISSION
-                )
+                try {
+                    contexto.contentResolver.takePersistableUriPermission(
+                        uri,
+                        Intent.FLAG_GRANT_READ_URI_PERMISSION
+                    )
+                } catch (_: Exception) { }
 
-                // Ejecuta una corrutina para no bloquear la interfaz.
                 scope.launch {
-                    documentoDao.insertar(
-                        Documento(
+                    try {
+                        val base64 = withContext(Dispatchers.IO) {
+                            convertirArchivoABase64(contexto, uri)
+                        }
+
+                        val nuevoDoc = Documento(
                             usuarioId = id,
                             nombre = nombreArchivo,
-                            uri = uri.toString()
+                            uri = uri.toString(),
+                            contenidoBase64 = base64
                         )
-                    )
-                    Toast.makeText(contexto, "Subido correctamente", Toast.LENGTH_LONG).show()
+
+                        val respuesta = RetrofitClient.documentosApi.subirDocumento(nuevoDoc)
+                        if (respuesta.isSuccessful) {
+                            Toast.makeText(contexto, "Subido correctamente a la nube", Toast.LENGTH_LONG).show()
+                        } else {
+                            Toast.makeText(contexto, "Error al subir (${respuesta.code()})", Toast.LENGTH_LONG).show()
+                        }
+                    } catch (e: Exception) {
+                        Toast.makeText(contexto, "No se pudo conectar con el servidor de documentos", Toast.LENGTH_LONG).show()
+                    }
                 }
             }
         }
     }
 
-    // Controla si el menú desplegable está abierto o cerrado.
     var menuAbierto by remember { mutableStateOf(false) }
-
-    // Controla la aparición animada del mensaje de bienvenida.
     var visible by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { visible = true }
 
     Scaffold(
-        // Barra de arriba
         topBar = {
             CenterAlignedTopAppBar(
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -160,7 +167,7 @@ fun PantallaInicio(nombreInicial: String, id: Int, documentoDao: DocumentoDAO, o
                 ),
                 title = {
                     Text(
-                        "Inicio",
+                        if (rol == "INSPECTORIA") "Panel Inspectoría" else "Inicio",
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
@@ -179,16 +186,22 @@ fun PantallaInicio(nombreInicial: String, id: Int, documentoDao: DocumentoDAO, o
                             onDismissRequest = { menuAbierto = false }
                         ) {
                             DropdownMenuItem(
-                                text = { Text("Acción 1") },
-                                onClick = { menuAbierto = false }
+                                text = { Text("Mis documentos") },
+                                onClick = {
+                                    menuAbierto = false
+                                    val intent = Intent(contexto, DocumentosActivity::class.java)
+                                    intent.putExtra("id", id)
+                                    contexto.startActivity(intent)
+                                }
                             )
                             DropdownMenuItem(
-                                text = { Text("Acción 2") },
-                                onClick = { menuAbierto = false }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("Acción 3") },
-                                onClick = { menuAbierto = false }
+                                text = { Text("Editar perfil") },
+                                onClick = {
+                                    menuAbierto = false
+                                    val intent = Intent(contexto, EditarPerfilActivity::class.java)
+                                    intent.putExtra("id", id)
+                                    editarPerfil.launch(intent)
+                                }
                             )
                             DropdownMenuItem(
                                 text = { Text("Cerrar sesión") },
@@ -203,7 +216,6 @@ fun PantallaInicio(nombreInicial: String, id: Int, documentoDao: DocumentoDAO, o
             )
         },
 
-        // Barra de abajo
         bottomBar = {
             BottomAppBar(
                 actions = {
@@ -237,7 +249,6 @@ fun PantallaInicio(nombreInicial: String, id: Int, documentoDao: DocumentoDAO, o
         }
     ) { innerPadding ->
 
-        // Mensaje de bienvenida con el nombre del usuario.
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -250,18 +261,82 @@ fun PantallaInicio(nombreInicial: String, id: Int, documentoDao: DocumentoDAO, o
                 visible = visible,
                 enter = fadeIn(animationSpec = tween(1500))
             ) {
-                Text(
-                    text = "Bienvenido, $nombre",
-                    fontSize = 30.sp,
-                    fontWeight = FontWeight.Bold,
-                    textAlign = TextAlign.Center
-                )
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        text = "Bienvenido, $nombre",
+                        fontSize = 30.sp,
+                        fontWeight = FontWeight.Bold,
+                        textAlign = TextAlign.Center
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Text(
+                        text = if (rol == "INSPECTORIA") "Cuenta de Administración / Inspectoría" else "Portal Docente",
+                        fontSize = 16.sp,
+                        color = MaterialTheme.colorScheme.secondary
+                    )
+
+                    Spacer(modifier = Modifier.height(32.dp))
+
+                    if (rol == "INSPECTORIA") {
+                        Button(
+                            onClick = {
+                                val intent = Intent(contexto, InspectoriaActivity::class.java)
+                                contexto.startActivity(intent)
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(Icons.Filled.EventAvailable, contentDescription = null)
+                            Spacer(modifier = Modifier.padding(4.dp))
+                            Text("Gestionar Solicitudes de Salas")
+                        }
+                    } else {
+                        Button(
+                            onClick = {
+                                val intent = Intent(contexto, ReservarSalaActivity::class.java).apply {
+                                    putExtra("id", id)
+                                    putExtra("nombre", nombre)
+                                }
+                                contexto.startActivity(intent)
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(Icons.Filled.EventAvailable, contentDescription = null)
+                            Spacer(modifier = Modifier.padding(4.dp))
+                            Text("Reservar Sala de Clases")
+                        }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        OutlinedButton(
+                            onClick = {
+                                val intent = Intent(contexto, DocumentosActivity::class.java)
+                                intent.putExtra("id", id)
+                                contexto.startActivity(intent)
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("Ver Mis Documentos")
+                        }
+                    }
+                }
             }
         }
     }
 }
 
-// Obtiene el nombre del archivo elegido (ejemplo: "informe.pdf").
+fun convertirArchivoABase64(contexto: Context, uri: Uri): String? {
+    return try {
+        contexto.contentResolver.openInputStream(uri)?.use { inputStream ->
+            val bytes = inputStream.readBytes()
+            Base64.encodeToString(bytes, Base64.NO_WRAP)
+        }
+    } catch (e: Exception) {
+        null
+    }
+}
+
 fun obtenerNombreArchivo(contexto: Context, uri: Uri): String {
     var nombre = "documento"
 
@@ -275,7 +350,6 @@ fun obtenerNombreArchivo(contexto: Context, uri: Uri): String {
     return nombre
 }
 
-// Devuelve el tipo del archivo si es PDF o Word. Si es de otro tipo, devuelve null.
 fun obtenerTipoMime(nombre: String): String? {
     val nombreMinuscula = nombre.lowercase()
 

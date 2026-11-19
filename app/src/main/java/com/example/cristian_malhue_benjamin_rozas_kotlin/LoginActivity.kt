@@ -1,11 +1,10 @@
 package com.example.cristian_malhue_benjamin_rozas_kotlin
 
+import android.content.Intent
 import android.os.Bundle
-import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import android.content.Intent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
@@ -14,18 +13,18 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.Checkbox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -33,8 +32,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -42,9 +41,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.room.Room
-import com.example.cristian_malhue_benjamin_rozas_kotlin.data.AppDatabase
-import com.example.cristian_malhue_benjamin_rozas_kotlin.data.UsuarioDAO
+import com.example.cristian_malhue_benjamin_rozas_kotlin.network.RetrofitClient
 import com.example.cristian_malhue_benjamin_rozas_kotlin.ui.theme.CristianMalhueBenjaminRozasKotlinTheme
 import kotlinx.coroutines.launch
 
@@ -53,24 +50,16 @@ class LoginActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
-        // Crear o abrir la base de datos Room.
-        val db = Room.databaseBuilder(
-            applicationContext,
-            AppDatabase::class.java,
-            "gestor.db"
-        ).build()
-
-        // Obtener el DAO para acceder a la tabla usuarios.
-        val dao = db.usuarioDao()
-
         setContent {
             CristianMalhueBenjaminRozasKotlinTheme {
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                    Column(modifier = Modifier.padding(innerPadding).padding(24.dp)) {
-                        // Entregar el DAO a nuestra pantalla.
+                    Column(
+                        modifier = Modifier
+                            .padding(innerPadding)
+                            .padding(24.dp)
+                    ) {
                         PantallaLogin(
-                            dao = dao,
-                            onVolver = { finish() } // termina esta Activity y vuelve a la anterior
+                            onVolver = { finish() }
                         )
                     }
                 }
@@ -80,7 +69,7 @@ class LoginActivity : ComponentActivity() {
 }
 
 @Composable
-fun PantallaLogin(dao: UsuarioDAO, onVolver: () -> Unit) {
+fun PantallaLogin(onVolver: () -> Unit) {
     val contexto = LocalContext.current
     val scope = rememberCoroutineScope()
 
@@ -88,6 +77,7 @@ fun PantallaLogin(dao: UsuarioDAO, onVolver: () -> Unit) {
     var password by rememberSaveable { mutableStateOf("") }
     var mostrarPassword by rememberSaveable { mutableStateOf(false) }
     var mensajeError by remember { mutableStateOf("") }
+    var cargando by remember { mutableStateOf(false) }
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
 
@@ -109,11 +99,10 @@ fun PantallaLogin(dao: UsuarioDAO, onVolver: () -> Unit) {
             value = password,
             onValueChange = { password = it },
             label = { Text("Contraseña") },
-            visualTransformation = if (mostrarPassword) VisualTransformation.None else PasswordVisualTransformation(), // Mostrar o no mostrar contraseña
+            visualTransformation = if (mostrarPassword) VisualTransformation.None else PasswordVisualTransformation(),
             modifier = Modifier.fillMaxWidth()
         )
 
-        // Checkbox para mostrar contraseña
         Row(verticalAlignment = Alignment.CenterVertically) {
             Checkbox(
                 checked = mostrarPassword,
@@ -122,7 +111,6 @@ fun PantallaLogin(dao: UsuarioDAO, onVolver: () -> Unit) {
             Text("Mostrar contraseña")
         }
 
-        // El mensaje de error aparece y desaparece con animación.
         AnimatedVisibility(
             visible = mensajeError.isNotEmpty(),
             enter = expandVertically(animationSpec = tween(300)) + fadeIn(),
@@ -140,30 +128,45 @@ fun PantallaLogin(dao: UsuarioDAO, onVolver: () -> Unit) {
                     mensajeError = "Ingrese su correo y su contraseña"
                 } else {
                     mensajeError = ""
+                    cargando = true
 
-                    // Ejecuta una corrutina para no bloquear la interfaz.
                     scope.launch {
-                        // Busca al usuario por su correo en SQLite (null si no existe).
-                        val usuario = dao.buscarPorCorreo(correo.trim().lowercase())
+                        try {
+                            val credenciales = mapOf(
+                                "correo" to correo.trim().lowercase(),
+                                "password" to password
+                            )
 
-                        if (usuario == null || usuario.password != password) {
-                            mensajeError = "Correo o contraseña incorrectos"
-                        } else {
-                            // Pasar datos a la activity "InicioActivity"
-                            val intent = Intent(contexto, InicioActivity::class.java)
-                            intent.putExtra("nombre", usuario.nombre)
-                            intent.putExtra("id", usuario.id)
-                            contexto.startActivity(intent)
+                            val respuesta = RetrofitClient.usuariosApi.login(credenciales)
 
-                            // Cierra el login para que el botón "atrás" no vuelva aquí.
-                            onVolver()
+                            if (respuesta.isSuccessful && respuesta.body() != null) {
+                                val usuario = respuesta.body()!!
+
+                                val intent = Intent(contexto, InicioActivity::class.java).apply {
+                                    putExtra("nombre", usuario.nombre)
+                                    putExtra("id", usuario.id ?: 0)
+                                    putExtra("correo", usuario.correo)
+                                    putExtra("rol", usuario.rol.name) // "PROFESOR" o "INSPECTORIA"
+                                }
+                                contexto.startActivity(intent)
+                                onVolver()
+                            } else if (respuesta.code() == 401) {
+                                mensajeError = "Correo o contraseña incorrectos"
+                            } else {
+                                mensajeError = "Error al iniciar sesión (${respuesta.code()})"
+                            }
+                        } catch (e: Exception) {
+                            mensajeError = "No se pudo conectar con el servidor de usuarios"
+                        } finally {
+                            cargando = false
                         }
                     }
                 }
             },
+            enabled = !cargando,
             modifier = Modifier.fillMaxWidth()
         ) {
-            Text("Entrar")
+            Text(if (cargando) "Ingresando..." else "Entrar")
         }
 
         TextButton(
