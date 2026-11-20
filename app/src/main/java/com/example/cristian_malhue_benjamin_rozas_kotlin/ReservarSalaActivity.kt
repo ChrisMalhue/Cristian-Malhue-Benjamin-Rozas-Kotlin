@@ -231,7 +231,7 @@ fun PantallaReservarSala(
                                         recargarDatos(sala, fechaSeleccionada)
                                     }
                                 },
-                                label = { Text("${sala.nombre} (${sala.area.name})") }
+                                label = { Text("${sala.nombre} (${sala.area.etiqueta})") }
                             )
                         }
                     }

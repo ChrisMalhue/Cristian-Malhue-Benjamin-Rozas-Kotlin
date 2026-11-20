@@ -23,6 +23,18 @@ interface DocumentosApi {
     @GET("api/salas/area/{area}")
     suspend fun listarSalasPorArea(@Path("area") area: AreaSala): Response<List<Sala>>
 
+    @POST("api/salas")
+    suspend fun crearSala(@Body sala: Sala): Response<Sala>
+
+    @PUT("api/salas/{id}")
+    suspend fun actualizarSala(
+        @Path("id") id: Int,
+        @Body sala: Sala
+    ): Response<Sala>
+
+    @DELETE("api/salas/{id}")
+    suspend fun eliminarSala(@Path("id") id: Int): Response<Void>
+
     // Reservas
     @GET("api/reservas/bloques")
     suspend fun obtenerBloques(
@@ -47,4 +59,6 @@ interface DocumentosApi {
         @Path("id") id: Int,
         @Body motivoBody: Map<String, String>
     ): Response<Reserva>
+
+
 }
