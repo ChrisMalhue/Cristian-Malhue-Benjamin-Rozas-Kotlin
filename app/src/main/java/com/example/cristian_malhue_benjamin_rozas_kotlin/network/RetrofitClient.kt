@@ -5,12 +5,12 @@ import retrofit2.converter.gson.GsonConverterFactory
 
 object RetrofitClient {
 
-    private const val URL_USUARIOS = "http://localhost:8081/"
-    private const val URL_DOCUMENTOS = "http://localhost:8082/"
+    private const val BASE_URL_USUARIOS = "https://microservicio-usuario-cristian-benjamin.onrender.com/"
+    private const val BASE_URL_DOCUMENTOS = "https://microservicio-documentos-cristian.onrender.com/"
 
     val usuariosApi: UsuariosApi by lazy {
         Retrofit.Builder()
-            .baseUrl(URL_USUARIOS)
+            .baseUrl(BASE_URL_USUARIOS)
             .addConverterFactory(GsonConverterFactory.create())
             .build()
             .create(UsuariosApi::class.java)
@@ -18,7 +18,7 @@ object RetrofitClient {
 
     val documentosApi: DocumentosApi by lazy {
         Retrofit.Builder()
-            .baseUrl(URL_DOCUMENTOS)
+            .baseUrl(BASE_URL_DOCUMENTOS)
             .addConverterFactory(GsonConverterFactory.create())
             .build()
             .create(DocumentosApi::class.java)
