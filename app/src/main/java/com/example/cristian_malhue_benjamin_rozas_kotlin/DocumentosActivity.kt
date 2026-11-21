@@ -191,20 +191,19 @@ fun DocumentoCard(documento: Documento, onEliminar: () -> Unit) {
             ) {
                 Button(
                     onClick = {
-                        val intent = Intent(Intent.ACTION_VIEW).apply {
-                            setDataAndType(
-                                Uri.parse(documento.uri),
-                                obtenerTipoMime(documento.nombre)
-                            )
-                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        val docId = documento.id
+                        if (docId == null) {
+                            Toast.makeText(contexto, "Documento sin ID válido", Toast.LENGTH_SHORT).show()
+                            return@Button
                         }
+
+                        val urlDescarga = "https://microservicio-documentos-cristian.onrender.com/api/documentos/$docId/descargar"
+                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(urlDescarga))
 
                         try {
                             contexto.startActivity(intent)
-                        } catch (e: SecurityException) {
-                            Toast.makeText(contexto, "No se puede leer el archivo en este dispositivo", Toast.LENGTH_LONG).show()
                         } catch (e: ActivityNotFoundException) {
-                            Toast.makeText(contexto, "No hay una app para abrir este archivo", Toast.LENGTH_LONG).show()
+                            Toast.makeText(contexto, "No hay una app o navegador para abrir el documento", Toast.LENGTH_LONG).show()
                         }
                     }
                 ) {

@@ -1,14 +1,21 @@
 package com.example.cristian_malhue_benjamin_rozas_kotlin.network
 
 import com.example.cristian_malhue_benjamin_rozas_kotlin.model.*
+import okhttp3.MultipartBody
+import okhttp3.RequestBody
 import retrofit2.Response
 import retrofit2.http.*
 
 interface DocumentosApi {
 
     // Documentos
-    @POST("api/documentos")
-    suspend fun subirDocumento(@Body documento: Documento): Response<Documento>
+    @Multipart
+    @POST("api/documentos/subir")
+    suspend fun subirDocumento(
+        @Part archivo: MultipartBody.Part,
+        @Part("usuarioId") usuarioId: RequestBody,
+        @Part("nombre") nombre: RequestBody? = null
+    ): Response<Documento>
 
     @GET("api/documentos/usuario/{usuarioId}")
     suspend fun listarDocumentos(@Path("usuarioId") usuarioId: Int): Response<List<Documento>>
@@ -59,6 +66,4 @@ interface DocumentosApi {
         @Path("id") id: Int,
         @Body motivoBody: Map<String, String>
     ): Response<Reserva>
-
-
 }

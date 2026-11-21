@@ -6,7 +6,6 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.provider.OpenableColumns
-import android.util.Base64
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -62,12 +61,14 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.cristian_malhue_benjamin_rozas_kotlin.model.Documento
 import com.example.cristian_malhue_benjamin_rozas_kotlin.network.RetrofitClient
 import com.example.cristian_malhue_benjamin_rozas_kotlin.ui.theme.CristianMalhueBenjaminRozasKotlinTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
+import okhttp3.MultipartBody
+import okhttp3.RequestBody.Companion.toRequestBody
 
 class InicioActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -116,31 +117,33 @@ fun PantallaInicio(
     ) { uri ->
         if (uri != null) {
             val nombreArchivo = obtenerNombreArchivo(contexto, uri)
+            val tipoMime = obtenerTipoMime(nombreArchivo)
 
-            if (obtenerTipoMime(nombreArchivo) == null) {
+            if (tipoMime == null) {
                 Toast.makeText(contexto, "Solo se permiten archivos Word o PDF", Toast.LENGTH_LONG).show()
             } else {
-                try {
-                    contexto.contentResolver.takePersistableUriPermission(
-                        uri,
-                        Intent.FLAG_GRANT_READ_URI_PERMISSION
-                    )
-                } catch (_: Exception) { }
-
                 scope.launch {
                     try {
-                        val base64 = withContext(Dispatchers.IO) {
-                            convertirArchivoABase64(contexto, uri)
+                        val bytes = withContext(Dispatchers.IO) {
+                            contexto.contentResolver.openInputStream(uri)?.use { it.readBytes() }
                         }
 
-                        val nuevoDoc = Documento(
-                            usuarioId = id,
-                            nombre = nombreArchivo,
-                            uri = uri.toString(),
-                            contenidoBase64 = base64
+                        if (bytes == null) {
+                            Toast.makeText(contexto, "No se pudo leer el archivo", Toast.LENGTH_LONG).show()
+                            return@launch
+                        }
+
+                        val requestFile = bytes.toRequestBody(tipoMime.toMediaTypeOrNull())
+                        val archivoPart = MultipartBody.Part.createFormData("archivo", nombreArchivo, requestFile)
+                        val usuarioIdBody = id.toString().toRequestBody("text/plain".toMediaTypeOrNull())
+                        val nombreBody = nombreArchivo.toRequestBody("text/plain".toMediaTypeOrNull())
+
+                        val respuesta = RetrofitClient.documentosApi.subirDocumento(
+                            archivo = archivoPart,
+                            usuarioId = usuarioIdBody,
+                            nombre = nombreBody
                         )
 
-                        val respuesta = RetrofitClient.documentosApi.subirDocumento(nuevoDoc)
                         if (respuesta.isSuccessful) {
                             Toast.makeText(contexto, "Subido correctamente a la nube", Toast.LENGTH_LONG).show()
                         } else {
@@ -323,17 +326,6 @@ fun PantallaInicio(
                 }
             }
         }
-    }
-}
-
-fun convertirArchivoABase64(contexto: Context, uri: Uri): String? {
-    return try {
-        contexto.contentResolver.openInputStream(uri)?.use { inputStream ->
-            val bytes = inputStream.readBytes()
-            Base64.encodeToString(bytes, Base64.NO_WRAP)
-        }
-    } catch (e: Exception) {
-        null
     }
 }
 
