@@ -400,7 +400,7 @@ fun PantallaInspectoria(onVolver: () -> Unit) {
                 TextButton(
                     onClick = {
                         val idRes = reservaARechazar?.id ?: return@TextButton
-                        val motivoLimpio = motivoRechazo.trim().ifEmpty { "Sin motivo especificado" }
+                        val motivoLimpio = motivoRechazo.trim()
                         reservaARechazar = null
                         procesando = true
 
@@ -422,7 +422,8 @@ fun PantallaInspectoria(onVolver: () -> Unit) {
                                 procesando = false
                             }
                         }
-                    }
+                    },
+                    enabled = motivoRechazo.isNotBlank()
                 ) {
                     Text("Confirmar rechazo", color = MaterialTheme.colorScheme.error)
                 }
