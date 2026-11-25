@@ -57,6 +57,7 @@ import com.example.cristian_malhue_benjamin_rozas_kotlin.ui.theme.CristianMalhue
 import kotlinx.coroutines.launch
 import java.time.DayOfWeek
 import java.time.LocalDate
+import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
@@ -100,13 +101,14 @@ fun PantallaReservarSala(
     var salas by remember { mutableStateOf<List<Sala>>(emptyList()) }
     var salaSeleccionada by remember { mutableStateOf<Sala?>(null) }
 
-    // Si hoy es sábado o domingo, avanza automáticamente al lunes siguiente
+    // Mínimo 1 día de antelación (desde mañana). Si cae sábado o domingo, avanza al lunes
+    val fechaMinima = LocalDate.now().plusDays(1)
     var fechaSeleccionada by remember {
         mutableStateOf(
-            when (LocalDate.now().dayOfWeek) {
-                DayOfWeek.SATURDAY -> LocalDate.now().plusDays(2)
-                DayOfWeek.SUNDAY -> LocalDate.now().plusDays(1)
-                else -> LocalDate.now()
+            when (fechaMinima.dayOfWeek) {
+                DayOfWeek.SATURDAY -> fechaMinima.plusDays(2)
+                DayOfWeek.SUNDAY -> fechaMinima.plusDays(1)
+                else -> fechaMinima
             }
         )
     }
@@ -167,18 +169,24 @@ fun PantallaReservarSala(
         }
     }
 
-    // Selector de fecha nativo (DatePickerDialog)
+    // Selector de fecha nativo (DatePickerDialog) bloqueando el día actual
     val selectorFecha = DatePickerDialog(
         contexto,
         { _, anio, mes, dia ->
             val nuevaFecha = LocalDate.of(anio, mes + 1, dia)
-            if (nuevaFecha.dayOfWeek == DayOfWeek.SATURDAY || nuevaFecha.dayOfWeek == DayOfWeek.SUNDAY) {
-                Toast.makeText(contexto, "Solo se permiten reservas de Lunes a Viernes", Toast.LENGTH_LONG).show()
-            } else {
-                fechaSeleccionada = nuevaFecha
-                mensajeError = ""
-                scope.launch {
-                    recargarDatos(salaSeleccionada, nuevaFecha)
+            when {
+                nuevaFecha.isBefore(fechaMinima) -> {
+                    Toast.makeText(contexto, "Debes reservar con al menos 1 día de antelación", Toast.LENGTH_LONG).show()
+                }
+                nuevaFecha.dayOfWeek == DayOfWeek.SATURDAY || nuevaFecha.dayOfWeek == DayOfWeek.SUNDAY -> {
+                    Toast.makeText(contexto, "Solo se permiten reservas de Lunes a Viernes", Toast.LENGTH_LONG).show()
+                }
+                else -> {
+                    fechaSeleccionada = nuevaFecha
+                    mensajeError = ""
+                    scope.launch {
+                        recargarDatos(salaSeleccionada, nuevaFecha)
+                    }
                 }
             }
         },
@@ -186,7 +194,11 @@ fun PantallaReservarSala(
         fechaSeleccionada.monthValue - 1,
         fechaSeleccionada.dayOfMonth
     ).apply {
-        datePicker.minDate = System.currentTimeMillis() - 1000
+        val inicioMananaMillis = fechaMinima
+            .atStartOfDay(ZoneId.systemDefault())
+            .toInstant()
+            .toEpochMilli()
+        datePicker.minDate = inicioMananaMillis
     }
 
     Column(
