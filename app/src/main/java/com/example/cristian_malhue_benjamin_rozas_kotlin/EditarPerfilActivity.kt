@@ -135,8 +135,7 @@ fun PantallaEditarPerfil(
                     val usuario = respuesta.body()!!
                     nombre = usuario.nombre
                     correo = usuario.correo
-                    password = usuario.password
-                    confirmar = usuario.password
+                    // No cargamos usuario.password para no mostrar el hash en pantalla
                     foto = usuario.foto
                     rolUsuario = usuario.rol
                 } else {
@@ -210,7 +209,8 @@ fun PantallaEditarPerfil(
         OutlinedTextField(
             value = password,
             onValueChange = { password = it },
-            label = { Text("Contraseña") },
+            label = { Text("Nueva contraseña (opcional)") },
+            placeholder = { Text("Dejar en blanco para mantener la actual") },
             visualTransformation = if (mostrarPassword) VisualTransformation.None else PasswordVisualTransformation(),
             modifier = Modifier.fillMaxWidth()
         )
@@ -218,7 +218,7 @@ fun PantallaEditarPerfil(
         OutlinedTextField(
             value = confirmar,
             onValueChange = { confirmar = it },
-            label = { Text("Confirmar contraseña") },
+            label = { Text("Confirmar nueva contraseña") },
             visualTransformation = if (mostrarPassword) VisualTransformation.None else PasswordVisualTransformation(),
             modifier = Modifier.fillMaxWidth()
         )
@@ -247,7 +247,13 @@ fun PantallaEditarPerfil(
 
         Button(
             onClick = {
-                val error = validarRegistro(nombre, correo, password, confirmar)
+                val cambiaPassword = password.isNotEmpty() || confirmar.isNotEmpty()
+                val error = if (cambiaPassword) {
+                    validarRegistro(nombre, correo, password, confirmar)
+                } else {
+                    // Validamos solo nombre y correo usando una clave temporal válida para pasar el filtro
+                    validarRegistro(nombre, correo, "Temporal123!", "Temporal123!")
+                }
 
                 if (error != null) {
                     mensajeError = error
@@ -261,7 +267,7 @@ fun PantallaEditarPerfil(
                                 id = id,
                                 nombre = nombre.trim(),
                                 correo = correo.trim().lowercase(),
-                                password = password,
+                                password = if (cambiaPassword) password else "",
                                 rol = rolUsuario,
                                 foto = foto
                             )
